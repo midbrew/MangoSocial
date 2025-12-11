@@ -40,11 +40,11 @@ export default function ProfileSetupPage() {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
     
-    // Form data
+    // Form data - initialize with empty values, will be populated from user data
     const [formData, setFormData] = useState({
-        name: user?.profile?.name || '',
-        gender: user?.profile?.gender || '',
-        starSign: user?.profile?.starSign || '',
+        name: '',
+        gender: '',
+        starSign: '',
         interests: [] as { type: 'predefined' | 'custom'; value: string; category?: string }[],
         genderPreference: [] as string[],
         useStarSignMatching: false,
@@ -52,6 +52,20 @@ export default function ProfileSetupPage() {
 
     // Available interests from API
     const [availableInterests, setAvailableInterests] = useState<InterestsByCategory>({});
+
+    // Load user data into form when user is available
+    useEffect(() => {
+        if (user) {
+            setFormData({
+                name: user.profile?.name || '',
+                gender: user.profile?.gender || '',
+                starSign: user.profile?.starSign || '',
+                interests: user.interests || [],
+                genderPreference: user.matchingPreferences?.genderPreference || [],
+                useStarSignMatching: user.matchingPreferences?.useStarSignMatching || false,
+            });
+        }
+    }, [user]);
 
     // Fetch interests on mount
     useEffect(() => {

@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Phone, LogOut, User, Settings } from 'lucide-react';
+import { LogOut, User, Mic } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/Button';
 import { useNavigate } from 'react-router-dom';
@@ -25,8 +25,9 @@ export default function HomePage() {
                 </div>
                 <div className="flex items-center gap-2">
                     <button 
-                        onClick={() => navigate('/profile')}
+                        onClick={() => navigate('/profile-setup')}
                         className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                        title="Edit Profile"
                     >
                         <User className="w-5 h-5 text-gray-600" />
                     </button>
@@ -86,7 +87,7 @@ export default function HomePage() {
                                 className="w-full text-lg py-6"
                                 onClick={() => navigate('/match')}
                             >
-                                <Phone className="w-5 h-5 mr-2" />
+                                <Mic className="w-5 h-5 mr-2" />
                                 Start Matching
                             </Button>
                         ) : (

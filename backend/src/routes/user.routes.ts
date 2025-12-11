@@ -8,6 +8,10 @@ const router = Router();
 // Get current user profile
 router.get('/me', protect, async (req: AuthRequest, res: Response) => {
     try {
+        if (!req.user) {
+            return res.status(401).json({ error: 'Not authorized' });
+        }
+
         const user = await User.findById(req.user.id).select('-__v');
         
         if (!user) {
@@ -24,6 +28,10 @@ router.get('/me', protect, async (req: AuthRequest, res: Response) => {
 // Update user profile
 router.put('/profile', protect, async (req: AuthRequest, res: Response) => {
     try {
+        if (!req.user) {
+            return res.status(401).json({ error: 'Not authorized' });
+        }
+
         const { name, gender, birthdate, starSign, bio, interests, matchingPreferences } = req.body;
 
         const user = await User.findById(req.user.id);
@@ -114,6 +122,10 @@ router.get('/interests', async (req: Request, res: Response) => {
 // Update avatar URL
 router.put('/avatar', protect, async (req: AuthRequest, res: Response) => {
     try {
+        if (!req.user) {
+            return res.status(401).json({ error: 'Not authorized' });
+        }
+
         const { avatarUrl } = req.body;
 
         if (!avatarUrl) {
