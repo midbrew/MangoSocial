@@ -5,10 +5,21 @@ This document tracks the development progress of the MangoSocial voice social ap
 ## Phase 1: Core MVP (8-10 weeks)
 
 ### Week 1-2: Authentication & User Setup
-- **Phone number verification system**: Not Started
-- **User registration with basic profile**: Not Started
-- **Gender selection and interest tagging**: Not Started
-- **Star sign integration (optional)**: Not Started
+- **Phone number verification system**: ✅ Complete
+  - SMS OTP via mNotify API
+  - 6-digit code with 5-minute expiration
+  - Mock mode for development
+- **User registration with basic profile**: ✅ Complete
+  - User model with all required fields
+  - Profile update endpoint (PUT /user/profile)
+  - Auth context with protected routes
+- **Gender selection and interest tagging**: ✅ Complete
+  - Multi-step onboarding flow
+  - 40+ predefined interests across 6 categories
+  - Gender selection and matching preferences
+- **Star sign integration (optional)**: ✅ Complete
+  - All 12 zodiac signs with dates
+  - Optional star sign compatibility matching
 
 ### Week 3-4: AI Practice System
 - **Integration with text-to-speech for AI responses**: Not Started

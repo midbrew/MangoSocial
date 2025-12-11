@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { ShieldCheck, ArrowRight } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
-import axios from 'axios';
+import { useAuth, api } from '../../context/AuthContext';
 
 export default function VerifyPage() {
     const [otp, setOtp] = useState('');
@@ -12,6 +12,7 @@ export default function VerifyPage() {
     const [error, setError] = useState('');
     const navigate = useNavigate();
     const location = useLocation();
+    const { login } = useAuth();
     const phone = location.state?.phone || 'your number';
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -20,19 +21,18 @@ export default function VerifyPage() {
         setError('');
 
         try {
-            const response = await axios.post('http://localhost:3001/auth/verify-otp', {
+            const response = await api.post('/auth/verify-otp', {
                 phone,
                 otp
             });
 
             const { token, user } = response.data;
 
-            // Store token in localStorage
-            localStorage.setItem('token', token);
-            localStorage.setItem('user', JSON.stringify(user));
+            // Use auth context to login
+            login(token, user);
 
             // Navigate based on profile completion
-            if (user.isProfileComplete) {
+            if (user.isOnboarded) {
                 navigate('/');
             } else {
                 navigate('/profile-setup');
@@ -41,6 +41,15 @@ export default function VerifyPage() {
             setError(err.response?.data?.error || 'Verification failed. Please try again.');
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const handleResendCode = async () => {
+        try {
+            await api.post('/auth/send-otp', { phone });
+            // Could show a toast here
+        } catch (err) {
+            setError('Failed to resend code');
         }
     };
 
@@ -65,8 +74,8 @@ export default function VerifyPage() {
                             type="text"
                             placeholder="000000"
                             value={otp}
-                            onChange={(e) => setOtp(e.target.value)}
-                            className="text-2xl text-center tracking-[1em] font-mono"
+                            onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                            className="text-2xl text-center tracking-[0.5em] font-mono"
                             maxLength={6}
                             required
                         />
@@ -80,7 +89,10 @@ export default function VerifyPage() {
                     </Button>
                 </form>
 
-                <button className="w-full text-sm text-orange-500 font-medium hover:text-orange-600">
+                <button 
+                    onClick={handleResendCode}
+                    className="w-full text-sm text-orange-500 font-medium hover:text-orange-600"
+                >
                     Resend Code
                 </button>
             </motion.div>

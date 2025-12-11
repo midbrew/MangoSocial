@@ -14,10 +14,16 @@ router.post('/send-otp', async (req: Request, res: Response) => {
         return res.status(400).json({ error: 'Phone number is required' });
     }
 
-    const otp = otpService.generateOTP();
-    otpService.saveOTP(phone, otp);
+    // Basic phone validation
+    const cleanPhone = phone.replace(/\s/g, '');
+    if (cleanPhone.length < 10) {
+        return res.status(400).json({ error: 'Invalid phone number' });
+    }
 
-    const sent = await smsService.sendOTP(phone, otp);
+    const otp = otpService.generateOTP();
+    otpService.saveOTP(cleanPhone, otp);
+
+    const sent = await smsService.sendOTP(cleanPhone, otp);
 
     if (sent) {
         res.json({ message: 'OTP sent successfully' });
@@ -33,17 +39,42 @@ router.post('/verify-otp', async (req: Request, res: Response) => {
         return res.status(400).json({ error: 'Phone and OTP are required' });
     }
 
-    const isValid = otpService.verifyOTP(phone, otp);
+    const cleanPhone = phone.replace(/\s/g, '');
+    const isValid = otpService.verifyOTP(cleanPhone, otp);
 
     if (isValid) {
         try {
-            let user = await User.findOne({ phoneNumber: phone });
+            let user = await User.findOne({ phoneNumber: cleanPhone });
+            let isNewUser = false;
 
             if (!user) {
+                isNewUser = true;
                 user = await User.create({
-                    phoneNumber: phone,
-                    isVerified: true
+                    phoneNumber: cleanPhone,
+                    isVerified: true,
+                    interests: [],
+                    matchingPreferences: {
+                        genderPreference: [],
+                        useStarSignMatching: false
+                    },
+                    premiumStatus: {
+                        isPremium: false
+                    },
+                    dailyConnections: {
+                        used: 0,
+                        resetAt: new Date()
+                    },
+                    aiSessionsCompleted: 0,
+                    canMatchHumans: false,
+                    reputationScore: 100,
+                    isOnboarded: false
                 });
+            } else {
+                // Update verification status if needed
+                if (!user.isVerified) {
+                    user.isVerified = true;
+                    await user.save();
+                }
             }
 
             const token = jwt.sign(
@@ -55,10 +86,16 @@ router.post('/verify-otp', async (req: Request, res: Response) => {
             res.json({
                 message: 'Verification successful',
                 token,
+                isNewUser,
                 user: {
                     id: user._id,
                     phone: user.phoneNumber,
-                    isProfileComplete: !!user.profile?.name
+                    profile: user.profile,
+                    interests: user.interests,
+                    matchingPreferences: user.matchingPreferences,
+                    isOnboarded: user.isOnboarded,
+                    canMatchHumans: user.canMatchHumans,
+                    aiSessionsCompleted: user.aiSessionsCompleted
                 }
             });
         } catch (error) {

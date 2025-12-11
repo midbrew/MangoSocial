@@ -1,16 +1,28 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Phone, ArrowRight } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
-import axios from 'axios';
+import { useAuth, api } from '../../context/AuthContext';
 
 export default function LoginPage() {
     const [phone, setPhone] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
     const navigate = useNavigate();
+    const { isAuthenticated, user } = useAuth();
+
+    // Redirect if already logged in
+    useEffect(() => {
+        if (isAuthenticated) {
+            if (user?.isOnboarded) {
+                navigate('/');
+            } else {
+                navigate('/profile-setup');
+            }
+        }
+    }, [isAuthenticated, user, navigate]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -18,11 +30,7 @@ export default function LoginPage() {
         setError('');
 
         try {
-            await axios.post('http://localhost:3001/auth/send-otp', {
-                phone
-            });
-
-            // Navigate to verify page
+            await api.post('/auth/send-otp', { phone });
             navigate('/verify', { state: { phone } });
         } catch (err: any) {
             setError(err.response?.data?.error || 'Failed to send OTP. Please try again.');
@@ -39,21 +47,21 @@ export default function LoginPage() {
                 className="w-full max-w-md space-y-8"
             >
                 <div className="text-center space-y-2">
-                    <div className="w-16 h-16 bg-orange-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
-                        <Phone className="w-8 h-8 text-orange-500" />
+                    <div className="w-20 h-20 bg-gradient-to-br from-orange-400 to-orange-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-orange-500/30">
+                        <span className="text-4xl">🥭</span>
                     </div>
                     <h1 className="text-3xl font-bold text-gray-900">Welcome to Mango</h1>
-                    <p className="text-gray-500">Enter your phone number to get started</p>
+                    <p className="text-gray-500">Connect through voice, make real friends</p>
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-6">
                     <div className="space-y-2">
                         <Input
                             type="tel"
-                            placeholder="+1 (555) 000-0000"
+                            placeholder="Enter your phone number"
                             value={phone}
                             onChange={(e) => setPhone(e.target.value)}
-                            className="text-lg text-center tracking-wider"
+                            className="text-lg text-center"
                             required
                         />
                         {error && (
