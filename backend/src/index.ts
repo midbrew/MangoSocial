@@ -5,6 +5,7 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import authRoutes from './routes/auth.routes';
 import userRoutes from './routes/user.routes';
+import aiRoutes from './routes/ai.routes';
 import connectDB from './config/db';
 
 dotenv.config();
@@ -25,6 +26,7 @@ app.use(express.json());
 
 app.use('/auth', authRoutes);
 app.use('/user', userRoutes);
+app.use('/ai', aiRoutes);
 
 app.get('/', (req: Request, res: Response) => {
     res.send('MangoSocial Backend is running');
