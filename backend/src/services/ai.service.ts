@@ -1,32 +1,44 @@
 import OpenAI from 'openai';
+import { ElevenLabsClient } from 'elevenlabs';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
 export class AiService {
     private openai: OpenAI | null = null;
+    private elevenlabs: ElevenLabsClient | null = null;
 
     constructor() {
-        const apiKey = process.env.OPENAI_API_KEY;
-        
-        if (apiKey && apiKey !== 'your_openai_api_key_here') {
-            this.openai = new OpenAI({ apiKey });
-        } else {
-            console.warn('WARNING: OPENAI_API_KEY is not set. AI responses will be mocked.');
+        // Delay client initialization to avoid ES modules hoisting issues 
+        // where this runs before dotenv.config() finishes.
+    }
+
+    private getOpenAI(): OpenAI | null {
+        if (!this.openai && process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'your_openai_api_key_here') {
+            this.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
         }
+        return this.openai;
+    }
+
+    private getElevenLabs(): ElevenLabsClient | null {
+        if (!this.elevenlabs && process.env.ELEVENLABS_API_KEY) {
+            this.elevenlabs = new ElevenLabsClient({ apiKey: process.env.ELEVENLABS_API_KEY });
+        }
+        return this.elevenlabs;
     }
 
     async generateResponse(
         systemPrompt: string,
         messages: { role: 'user' | 'assistant' | 'system'; content: string }[]
     ): Promise<string> {
+        const openaiClient = this.getOpenAI();
         // If OpenAI is not configured, return mock responses
-        if (!this.openai) {
+        if (!openaiClient) {
             return this.getMockResponse(messages);
         }
 
         try {
-            const completion = await this.openai.chat.completions.create({
+            const completion = await openaiClient.chat.completions.create({
                 model: 'gpt-4o-mini',
                 messages: [
                     { role: 'system', content: systemPrompt },
@@ -43,6 +55,34 @@ export class AiService {
         } catch (error) {
             console.error('OpenAI API error:', error);
             throw new Error('Failed to generate AI response');
+        }
+    }
+
+    async generateAudio(text: string, voiceId = 'UgBBYS2sOqTuMpoF3BR0'): Promise<string | null> {
+        const client = this.getElevenLabs();
+        if (!client) {
+            console.warn('WARNING: getElevenLabs() returned null, missing api key?');
+            return null;
+        }
+
+        try {
+            // JBFqnCBsd6RMkjVDRZzb = "George" – warm conversational male voice
+            const audioStream = await client.textToSpeech.convert(voiceId, {
+                model_id: 'eleven_v3',
+                text,
+                output_format: 'mp3_44100_128',
+            });
+
+            // Convert stream to Buffer then base64
+            const chunks: Buffer[] = [];
+            for await (const chunk of audioStream) {
+                chunks.push(Buffer.from(chunk));
+            }
+            const buffer = Buffer.concat(chunks);
+            return buffer.toString('base64');
+        } catch (error) {
+            console.error('ElevenLabs API error:', error);
+            return null; // Fallback to browser TTS
         }
     }
 

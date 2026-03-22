@@ -2,6 +2,27 @@ import { Router, Request, Response } from 'express';
 import User from '../models/User';
 import Interest, { PREDEFINED_INTERESTS } from '../models/Interest';
 import { protect, AuthRequest } from '../middleware/auth.middleware';
+import Friendship from '../models/Friendship';
+import Message from '../models/Message';
+import Notification from '../models/Notification';
+import Report from '../models/Report';
+import Connection from '../models/Connection';
+
+function serializeUser(user: any) {
+    return {
+        id: user._id.toString(),
+        _id: user._id.toString(),
+        phone: user.phoneNumber,
+        profile: user.profile,
+        interests: user.interests,
+        matchingPreferences: user.matchingPreferences,
+        premiumStatus: user.premiumStatus,
+        isOnboarded: user.isOnboarded,
+        canMatchHumans: user.canMatchHumans,
+        aiSessionsCompleted: user.aiSessionsCompleted,
+        reputationScore: user.reputationScore,
+    };
+}
 
 const router = Router();
 
@@ -18,9 +39,74 @@ router.get('/me', protect, async (req: AuthRequest, res: Response) => {
             return res.status(404).json({ error: 'User not found' });
         }
 
-        res.json({ user });
+        res.json({ user: serializeUser(user) });
     } catch (error) {
         console.error('Error fetching user:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Get all predefined interests (must be above /:id to prevent route collision)
+router.get('/interests', async (req: Request, res: Response) => {
+    try {
+        let interests = await Interest.find({ isActive: true }).sort({ category: 1, name: 1 });
+        
+        if (interests.length === 0) {
+            await Interest.insertMany(PREDEFINED_INTERESTS);
+            interests = await Interest.find({ isActive: true }).sort({ category: 1, name: 1 });
+        }
+
+        const grouped = interests.reduce((acc, interest) => {
+            if (!acc[interest.category]) {
+                acc[interest.category] = [];
+            }
+            acc[interest.category].push({
+                id: interest._id,
+                name: interest.name,
+                emoji: interest.emoji
+            });
+            return acc;
+        }, {} as Record<string, any[]>);
+
+        res.json({ interests: grouped });
+    } catch (error) {
+        console.error('Error fetching interests:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Get user profile by ID (protected, requires connection)
+router.get('/:id', protect, async (req: AuthRequest, res: Response) => {
+    try {
+        if (!req.user) {
+            return res.status(401).json({ error: 'Not authorized' });
+        }
+
+        const targetUserId = req.params.id;
+        const myUserId = req.user.id;
+
+        // Check connection
+        const conn = await Friendship.findOne({
+            $or: [
+                { user1Id: myUserId, user2Id: targetUserId },
+                { user1Id: targetUserId, user2Id: myUserId }
+            ],
+            status: 'accepted'
+        });
+
+        // Allow viewing own profile or if connected
+        if (!conn && targetUserId !== myUserId) {
+            return res.status(403).json({ error: 'Profiles are private. You must be connected to view this profile.' });
+        }
+
+        const user = await User.findById(targetUserId).select('-__v');
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        res.json({ user });
+    } catch (error) {
+        console.error('Error fetching user profile:', error);
         res.status(500).json({ error: 'Server error' });
     }
 });
@@ -70,51 +156,10 @@ router.put('/profile', protect, async (req: AuthRequest, res: Response) => {
 
         res.json({ 
             message: 'Profile updated successfully',
-            user: {
-                id: user._id,
-                phone: user.phoneNumber,
-                profile: user.profile,
-                interests: user.interests,
-                matchingPreferences: user.matchingPreferences,
-                isOnboarded: user.isOnboarded,
-                canMatchHumans: user.canMatchHumans,
-                aiSessionsCompleted: user.aiSessionsCompleted
-            }
+            user: serializeUser(user)
         });
     } catch (error) {
         console.error('Error updating profile:', error);
-        res.status(500).json({ error: 'Server error' });
-    }
-});
-
-// Get all predefined interests
-router.get('/interests', async (req: Request, res: Response) => {
-    try {
-        // Try to get from database first
-        let interests = await Interest.find({ isActive: true }).sort({ category: 1, name: 1 });
-        
-        // If no interests in DB, seed them
-        if (interests.length === 0) {
-            await Interest.insertMany(PREDEFINED_INTERESTS);
-            interests = await Interest.find({ isActive: true }).sort({ category: 1, name: 1 });
-        }
-
-        // Group by category
-        const grouped = interests.reduce((acc, interest) => {
-            if (!acc[interest.category]) {
-                acc[interest.category] = [];
-            }
-            acc[interest.category].push({
-                id: interest._id,
-                name: interest.name,
-                emoji: interest.emoji
-            });
-            return acc;
-        }, {} as Record<string, any[]>);
-
-        res.json({ interests: grouped });
-    } catch (error) {
-        console.error('Error fetching interests:', error);
         res.status(500).json({ error: 'Server error' });
     }
 });
@@ -144,10 +189,54 @@ router.put('/avatar', protect, async (req: AuthRequest, res: Response) => {
 
         res.json({ 
             message: 'Avatar updated successfully',
-            avatarUrl: user.profile.avatarUrl
+            avatarUrl: user.profile.avatarUrl,
+            user: serializeUser(user),
         });
     } catch (error) {
         console.error('Error updating avatar:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Toggle Premium Status (Admin Mock)
+router.put('/premium/toggle', protect, async (req: AuthRequest, res: Response) => {
+    try {
+        if (!req.user) return res.status(401).json({ error: 'Not authorized' });
+
+        const user = await User.findById(req.user.id);
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        user.premiumStatus.isPremium = !user.premiumStatus.isPremium;
+        await user.save();
+
+        res.json({ 
+            message: `Premium status is now ${user.premiumStatus.isPremium ? 'Active' : 'Inactive'}`,
+            isPremium: user.premiumStatus.isPremium,
+            user: serializeUser(user),
+        });
+    } catch (error) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+router.delete('/me', protect, async (req: AuthRequest, res: Response) => {
+    try {
+        if (!req.user) return res.status(401).json({ error: 'Not authorized' });
+
+        const userId = req.user.id;
+
+        await Promise.all([
+            Friendship.deleteMany({ $or: [{ user1Id: userId }, { user2Id: userId }] }),
+            Message.deleteMany({ $or: [{ senderId: userId }, { receiverId: userId }] }),
+            Notification.deleteMany({ user: userId }),
+            Report.deleteMany({ $or: [{ reporter: userId }, { reportedUser: userId }] }),
+            Connection.deleteMany({ users: userId }),
+            User.findByIdAndDelete(userId),
+        ]);
+
+        res.json({ message: 'Account deleted successfully' });
+    } catch (error) {
+        console.error('Error deleting account:', error);
         res.status(500).json({ error: 'Server error' });
     }
 });

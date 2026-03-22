@@ -32,8 +32,11 @@ export interface IUser extends Document {
     canMatchHumans: boolean;
     reputationScore: number;
     isOnboarded: boolean;
+    agreedToTermsAt?: Date;
     createdAt: Date;
     updatedAt: Date;
+    checkDailyReset(): void;
+    getDailyLimit(): number;
 }
 
 const UserSchema: Schema = new Schema({
@@ -70,7 +73,8 @@ const UserSchema: Schema = new Schema({
     aiSessionsCompleted: { type: Number, default: 0 },
     canMatchHumans: { type: Boolean, default: false },
     reputationScore: { type: Number, default: 100 },
-    isOnboarded: { type: Boolean, default: false }
+    isOnboarded: { type: Boolean, default: false },
+    agreedToTermsAt: { type: Date }
 }, {
     timestamps: true
 });

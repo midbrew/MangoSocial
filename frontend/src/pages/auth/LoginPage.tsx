@@ -75,7 +75,10 @@ export default function LoginPage() {
                 </form>
 
                 <p className="text-xs text-center text-gray-400">
-                    By continuing, you agree to our Terms of Service and Privacy Policy.
+                    By continuing, you agree to our{' '}
+                    <a href="/terms" className="text-orange-500 hover:text-orange-600 underline">Terms of Service</a>
+                    {' '}and{' '}
+                    <a href="/privacy" className="text-orange-500 hover:text-orange-600 underline">Privacy Policy</a>.
                 </p>
             </motion.div>
         </div>

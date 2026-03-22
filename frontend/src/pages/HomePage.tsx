@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { LogOut, User, Mic } from 'lucide-react';
+import { User, Mic, LogOut } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/Button';
 import { useNavigate } from 'react-router-dom';
@@ -7,11 +7,6 @@ import { useNavigate } from 'react-router-dom';
 export default function HomePage() {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
-
-    const handleLogout = () => {
-        logout();
-        navigate('/login');
-    };
 
     return (
         <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white">
@@ -32,10 +27,11 @@ export default function HomePage() {
                         <User className="w-5 h-5 text-gray-600" />
                     </button>
                     <button 
-                        onClick={handleLogout}
-                        className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                        onClick={() => { logout(); navigate('/login'); }}
+                        className="p-2 hover:bg-red-50 rounded-full transition-colors"
+                        title="Sign Out"
                     >
-                        <LogOut className="w-5 h-5 text-gray-600" />
+                        <LogOut className="w-5 h-5 text-red-500" />
                     </button>
                 </div>
             </header>
@@ -85,7 +81,7 @@ export default function HomePage() {
                             <Button 
                                 size="lg" 
                                 className="w-full text-lg py-6"
-                                onClick={() => navigate('/match')}
+                                onClick={() => navigate('/queue')}
                             >
                                 <Mic className="w-5 h-5 mr-2" />
                                 Start Matching
@@ -96,22 +92,24 @@ export default function HomePage() {
                                 className="w-full text-lg py-6"
                                 onClick={() => navigate('/ai-practice')}
                             >
-                                🤖 Practice with AI
+                                🥭 Practice with Mango
                             </Button>
                         )}
                     </div>
 
                     {/* Stats */}
-                    <div className="mt-8 grid grid-cols-2 gap-4">
+                    <div className={`mt-8 grid gap-4 ${user?.canMatchHumans ? 'grid-cols-1 max-w-[200px] mx-auto' : 'grid-cols-2'}`}>
+                        {!user?.canMatchHumans && (
+                            <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+                                <p className="text-2xl font-bold text-orange-500">
+                                    {user?.aiSessionsCompleted || 0}/3
+                                </p>
+                                <p className="text-xs text-gray-500">AI Sessions</p>
+                            </div>
+                        )}
                         <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
                             <p className="text-2xl font-bold text-orange-500">
-                                {user?.aiSessionsCompleted || 0}/3
-                            </p>
-                            <p className="text-xs text-gray-500">AI Sessions</p>
-                        </div>
-                        <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-                            <p className="text-2xl font-bold text-orange-500">
-                                {user?.interests.length || 0}
+                                {user?.interests?.length || 0}
                             </p>
                             <p className="text-xs text-gray-500">Interests</p>
                         </div>

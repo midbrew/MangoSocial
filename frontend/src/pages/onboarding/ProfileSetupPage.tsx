@@ -177,6 +177,19 @@ export default function ProfileSetupPage() {
 
     return (
         <div className="min-h-screen bg-white flex flex-col">
+            {/* Header / Back Button (Only for editing) */}
+            {user?.isOnboarded && (
+                <div className="p-4 flex items-center gap-3 pb-0">
+                    <button 
+                        onClick={() => navigate(-1)}
+                        className="p-2 -ml-2 text-gray-500 hover:text-gray-900 transition-colors rounded-full hover:bg-gray-100"
+                    >
+                        <ArrowLeft className="w-5 h-5" />
+                    </button>
+                    <span className="font-bold text-gray-900">Edit Profile</span>
+                </div>
+            )}
+
             {/* Progress Bar */}
             <div className="p-4">
                 <div className="flex items-center justify-between mb-2">
