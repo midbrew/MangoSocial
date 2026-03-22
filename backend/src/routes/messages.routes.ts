@@ -6,6 +6,7 @@ import { AiService } from '../services/ai.service';
 import User from '../models/User';
 import { BOT_IDS, isAcceptedFriendship, isBlockedPair } from '../services/friendship.service';
 import { createNotification } from '../services/notification.service';
+import { trackEvent } from '../services/analytics.service';
 
 const router = express.Router();
 const aiService = new AiService();
@@ -72,6 +73,8 @@ router.post('/', protect, async (req: AuthRequest, res: Response): Promise<void>
             receiverId,
             content: content.trim()
         });
+
+        await trackEvent('message_sent', userId, { receiverId, isBot: BOT_IDS.includes(receiverId as any) });
 
         const returnedMessages = [userMessage];
 

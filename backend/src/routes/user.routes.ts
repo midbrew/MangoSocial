@@ -6,7 +6,7 @@ import Friendship from '../models/Friendship';
 import Message from '../models/Message';
 import Notification from '../models/Notification';
 import Report from '../models/Report';
-import Connection from '../models/Connection';
+import { trackEvent } from '../services/analytics.service';
 
 function serializeUser(user: any) {
     return {
@@ -21,6 +21,7 @@ function serializeUser(user: any) {
         canMatchHumans: user.canMatchHumans,
         aiSessionsCompleted: user.aiSessionsCompleted,
         reputationScore: user.reputationScore,
+        isAdmin: !!user.isAdmin,
     };
 }
 
@@ -230,9 +231,10 @@ router.delete('/me', protect, async (req: AuthRequest, res: Response) => {
             Message.deleteMany({ $or: [{ senderId: userId }, { receiverId: userId }] }),
             Notification.deleteMany({ user: userId }),
             Report.deleteMany({ $or: [{ reporter: userId }, { reportedUser: userId }] }),
-            Connection.deleteMany({ users: userId }),
             User.findByIdAndDelete(userId),
         ]);
+
+        await trackEvent('account_deleted', userId);
 
         res.json({ message: 'Account deleted successfully' });
     } catch (error) {

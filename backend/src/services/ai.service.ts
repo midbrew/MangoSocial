@@ -53,8 +53,8 @@ export class AiService {
 
             return completion.choices[0]?.message?.content || "I'm not sure what to say. Could you try again?";
         } catch (error) {
-            console.error('OpenAI API error:', error);
-            throw new Error('Failed to generate AI response');
+            console.error('OpenAI API error (falling back to mock):', error);
+            return this.getMockResponse(messages);
         }
     }
 
@@ -68,7 +68,7 @@ export class AiService {
         try {
             // JBFqnCBsd6RMkjVDRZzb = "George" – warm conversational male voice
             const audioStream = await client.textToSpeech.convert(voiceId, {
-                model_id: 'eleven_v3',
+                model_id: 'eleven_turbo_v2_5',
                 text,
                 output_format: 'mp3_44100_128',
             });

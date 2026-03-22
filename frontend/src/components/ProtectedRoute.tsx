@@ -4,9 +4,10 @@ import { useAuth } from '../context/AuthContext';
 interface ProtectedRouteProps {
     children: React.ReactNode;
     requireOnboarding?: boolean;
+    requireAdmin?: boolean;
 }
 
-export default function ProtectedRoute({ children, requireOnboarding = false }: ProtectedRouteProps) {
+export default function ProtectedRoute({ children, requireOnboarding = false, requireAdmin = false }: ProtectedRouteProps) {
     const { isAuthenticated, isLoading, user } = useAuth();
     const location = useLocation();
 
@@ -30,6 +31,10 @@ export default function ProtectedRoute({ children, requireOnboarding = false }: 
     // If route requires onboarding to be complete, check it
     if (requireOnboarding && user && !user.isOnboarded) {
         return <Navigate to="/profile-setup" replace />;
+    }
+
+    if (requireAdmin && user && !user.isAdmin) {
+        return <Navigate to="/" replace />;
     }
 
     return <>{children}</>;

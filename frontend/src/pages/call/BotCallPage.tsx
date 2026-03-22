@@ -273,7 +273,7 @@ export default function BotCallPage() {
         <div>
           <h2 className="text-2xl font-bold">{botName}</h2>
           <p className="text-sm text-slate-400">
-            {isBotSpeaking ? 'Speaking...' : isBotThinking ? 'Thinking...' : isListening ? 'Listening to you...' : 'Connected'}
+            {isBotSpeaking ? 'Speaking...' : isBotThinking ? 'Thinking...' : isListening ? 'Listening to you...' : null}
           </p>
         </div>
 

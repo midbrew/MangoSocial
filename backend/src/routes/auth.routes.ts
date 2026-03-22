@@ -41,9 +41,14 @@ router.post('/verify-otp', validate(verifyOtpSchema), async (req: Request, res: 
         try {
             let user = await User.findOne({ phoneNumber: cleanPhone });
             let isNewUser = false;
+            const adminPhones = (process.env.ADMIN_PHONE_NUMBERS || '')
+                .split(',')
+                .map((phone) => phone.trim())
+                .filter(Boolean);
 
             if (!user) {
                 isNewUser = true;
+                const existingAdminCount = await User.countDocuments({ isAdmin: true });
                 user = await User.create({
                     phoneNumber: cleanPhone,
                     isVerified: true,
@@ -63,14 +68,18 @@ router.post('/verify-otp', validate(verifyOtpSchema), async (req: Request, res: 
                     canMatchHumans: false,
                     reputationScore: 100,
                     isOnboarded: false,
+                    isAdmin: adminPhones.includes(cleanPhone) || existingAdminCount === 0,
                     agreedToTermsAt: new Date()
                 });
             } else {
                 // Update verification status if needed
                 if (!user.isVerified) {
                     user.isVerified = true;
-                    await user.save();
                 }
+                if (adminPhones.includes(cleanPhone) && !user.isAdmin) {
+                    user.isAdmin = true;
+                }
+                await user.save();
             }
 
             const accessToken = jwt.sign(
@@ -108,6 +117,7 @@ router.post('/verify-otp', validate(verifyOtpSchema), async (req: Request, res: 
                     canMatchHumans: user.canMatchHumans,
                     aiSessionsCompleted: user.aiSessionsCompleted,
                     reputationScore: user.reputationScore,
+                    isAdmin: !!user.isAdmin,
                 }
             });
         } catch (error) {

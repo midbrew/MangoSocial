@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Peer } from 'peerjs';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Clock, Mic, MicOff, PhoneOff } from 'lucide-react';
+import { Clock, Mic, MicOff, PhoneOff, User } from 'lucide-react';
 import { socketService } from '../../services/socket.service';
 
 export default function CallRoomPage() {
@@ -19,6 +19,10 @@ export default function CallRoomPage() {
   const [partnerWantsMango, setPartnerWantsMango] = useState(false);
   const [showMangoMatch, setShowMangoMatch] = useState(false);
   const [mangoError, setMangoError] = useState('');
+  const [showPartnerLeftModal, setShowPartnerLeftModal] = useState(false);
+  const [partnerName, setPartnerName] = useState<string>('Your Match');
+  const [partnerAvatar, setPartnerAvatar] = useState<string | null>(null);
+  const [isReconnecting, setIsReconnecting] = useState(false);
 
   const myAudioRef = useRef<HTMLAudioElement>(null);
   const partnerAudioRef = useRef<HTMLAudioElement>(null);
@@ -28,6 +32,8 @@ export default function CallRoomPage() {
   const timeLeftRef = useRef(60);
   const isPremiumRef = useRef(false);
   const showMangoMatchRef = useRef(false);
+  const reconnectAttemptsRef = useRef(0);
+  const MAX_RECONNECT_ATTEMPTS = 3;
 
   const roomId = sessionStorage.getItem('peer_room_id');
   const myUid = sessionStorage.getItem('my_uid');
@@ -140,6 +146,55 @@ export default function CallRoomPage() {
         });
     });
 
+    // Reconnect logic with exponential backoff
+    peer.on('disconnected', () => {
+      if (hasLeftRef.current) return;
+      const attempt = reconnectAttemptsRef.current;
+      if (attempt < MAX_RECONNECT_ATTEMPTS) {
+        reconnectAttemptsRef.current = attempt + 1;
+        setIsReconnecting(true);
+        const delay = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
+        console.log(`PeerJS disconnected. Reconnect attempt ${attempt + 1}/${MAX_RECONNECT_ATTEMPTS} in ${delay}ms`);
+        setTimeout(() => {
+          if (!hasLeftRef.current && peerRef.current && peerRef.current.disconnected) {
+            peerRef.current.reconnect();
+          }
+        }, delay);
+      } else {
+        console.log('PeerJS: max reconnect attempts reached');
+        setIsReconnecting(false);
+        setShowPartnerLeftModal(true);
+        setTimeout(() => leaveCall(), 3000);
+      }
+    });
+
+    peer.on('error', (err) => {
+      console.error('PeerJS error:', err.type, err.message);
+      if (hasLeftRef.current) return;
+      // For recoverable errors, let the disconnected handler manage retries
+      if (err.type === 'network' || err.type === 'server-error' || err.type === 'socket-error') {
+        // PeerJS will emit 'disconnected' after these, which triggers reconnect
+        return;
+      }
+      // For fatal errors (peer-unavailable etc), show partner-left
+      if (err.type === 'peer-unavailable') {
+        // Partner hasn't joined yet or left — not a reconnect scenario
+        return;
+      }
+      setIsReconnecting(false);
+      setShowPartnerLeftModal(true);
+      setTimeout(() => leaveCall(), 3000);
+    });
+
+    // Reset reconnect counter when successfully reconnected
+    peer.on('open', () => {
+      if (reconnectAttemptsRef.current > 0) {
+        console.log('PeerJS reconnected successfully');
+        reconnectAttemptsRef.current = 0;
+        setIsReconnecting(false);
+      }
+    });
+
     const onPartnerRequestedExtension = () => {
       setPartnerExtended(true);
     };
@@ -152,8 +207,11 @@ export default function CallRoomPage() {
     };
 
     const onPartnerLeft = () => {
-      alert('Your partner has left the call.');
-      leaveCall();
+      setShowPartnerLeftModal(true);
+      // Auto-leave after showing the modal for 3 seconds
+      setTimeout(() => {
+        leaveCall();
+      }, 3000);
     };
 
     const onPartnerWantsMango = () => {
@@ -198,6 +256,33 @@ export default function CallRoomPage() {
       cleanupCallResources(true);
     };
   }, [myUid, navigate, partnerId, roomId]);
+
+  // Fetch partner metadata for display during call
+  useEffect(() => {
+    const storedBotName = sessionStorage.getItem('bot_name');
+    const isBotMatch = sessionStorage.getItem('is_bot_match') === 'true';
+
+    if (isBotMatch && storedBotName) {
+      setPartnerName(storedBotName);
+      return;
+    }
+
+    if (partnerId && partnerId.length > 10) {
+      const token = localStorage.getItem('token');
+      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      fetch(`${API_URL}/user/${partnerId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data?.user) {
+            setPartnerName(data.user.profile?.name || 'Your Match');
+            setPartnerAvatar(data.user.profile?.avatarUrl || null);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [partnerId]);
 
   useEffect(() => {
     let timer: number | undefined;
@@ -326,7 +411,7 @@ export default function CallRoomPage() {
       <div className="relative w-full max-w-sm flex flex-col items-center justify-center space-y-8">
         <div className="text-center space-y-4">
           <h2 className="text-xl font-medium text-white/80">
-            {isConnected ? 'In Call' : 'Connecting to partner...'}
+            {isReconnecting ? 'Reconnecting...' : isConnected ? 'In Call' : 'Connecting to partner...'}
           </h2>
           <div className="text-6xl font-light text-white tracking-widest font-mono flex items-center justify-center gap-3">
             <Clock className="w-10 h-10 text-indigo-400" />
@@ -345,13 +430,17 @@ export default function CallRoomPage() {
 
         <div className="relative w-40 h-40">
           <div
-            className={`absolute inset-0 bg-indigo-600 rounded-full flex items-center justify-center transition-all duration-75 ${!isConnected ? 'opacity-50' : ''}`}
+            className={`absolute inset-0 bg-indigo-600 rounded-full flex flex-col items-center justify-center transition-all duration-75 ${!isConnected ? 'opacity-50' : ''}`}
             style={{
               transform: isConnected ? `scale(${1 + (audioVolume / 400)})` : 'scale(1)',
               boxShadow: isConnected ? `0 0 ${20 + audioVolume}px rgba(99, 102, 241, ${0.4 + (audioVolume / 200)})` : 'none'
             }}
           >
-            <div className="text-white font-semibold text-2xl tracking-wider z-10">USER</div>
+            {partnerAvatar ? (
+              <img src={partnerAvatar} alt={partnerName} className="w-full h-full rounded-full object-cover absolute inset-0" />
+            ) : (
+              <User className="w-10 h-10 text-white/60 z-10" />
+            )}
           </div>
           {isConnected && (
             <div
@@ -360,6 +449,7 @@ export default function CallRoomPage() {
             />
           )}
         </div>
+        <p className="text-white/70 text-sm font-medium mt-2 text-center">{partnerName}</p>
 
         <div className="w-full space-y-4">
           <AnimatePresence>
@@ -498,6 +588,34 @@ export default function CallRoomPage() {
                   End Call
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Partner Left Modal */}
+      <AnimatePresence>
+        {showPartnerLeftModal && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-40">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-slate-900 border border-slate-700 rounded-3xl p-6 max-w-sm w-full space-y-4 shadow-xl text-center"
+            >
+              <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mx-auto">
+                <span className="text-3xl">👋</span>
+              </div>
+              <h2 className="text-lg font-bold text-white">Partner Left</h2>
+              <p className="text-sm text-slate-400">
+                {partnerName} has left the call. You'll be redirected shortly.
+              </p>
+              <button
+                onClick={() => leaveCall()}
+                className="w-full py-3 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700"
+              >
+                Continue
+              </button>
             </motion.div>
           </div>
         )}

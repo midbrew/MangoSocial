@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Bell, Check, MessageCircle, Sparkles, UserPlus } from 'lucide-react';
+import { ArrowLeft, Bell, Check, MessageCircle, Sparkles, Trash2, UserPlus, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { api } from '../../context/AuthContext';
 
@@ -42,6 +42,25 @@ export default function NotificationsPage() {
         try {
             await api.put('/notifications/read-all');
             setNotifications((prev) => prev.map((notification) => ({ ...notification, read: true })));
+        } catch (error) {
+            console.error(error);
+        }
+    };
+
+    const deleteNotification = async (id: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        try {
+            await api.delete(`/notifications/${id}`);
+            setNotifications((prev) => prev.filter((n) => n._id !== id));
+        } catch (error) {
+            console.error(error);
+        }
+    };
+
+    const clearAll = async () => {
+        try {
+            await api.delete('/notifications');
+            setNotifications([]);
         } catch (error) {
             console.error(error);
         }
@@ -133,6 +152,15 @@ export default function NotificationsPage() {
                         Mark all read
                     </button>
                 )}
+                {notifications.length > 0 && (
+                    <button
+                        onClick={clearAll}
+                        className="text-sm text-red-400 font-medium hover:text-red-500 flex items-center gap-1"
+                    >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Clear
+                    </button>
+                )}
             </header>
 
             <main className="px-4 py-4 max-w-lg mx-auto">
@@ -159,7 +187,7 @@ export default function NotificationsPage() {
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ delay: index * 0.03 }}
                                 onClick={() => openNotification(notification)}
-                                className={`w-full p-4 rounded-2xl flex items-start gap-3 transition-colors text-left ${
+                                className={`w-full p-4 rounded-2xl flex items-start gap-3 transition-colors text-left group ${
                                     notification.read
                                         ? 'bg-white border border-gray-100'
                                         : 'bg-orange-50 border border-orange-100'
@@ -182,6 +210,12 @@ export default function NotificationsPage() {
                                 {!notification.read && (
                                     <div className="w-2 h-2 bg-orange-500 rounded-full flex-shrink-0 mt-2" />
                                 )}
+                                <button
+                                    onClick={(e) => deleteNotification(notification._id, e)}
+                                    className="p-1.5 rounded-full hover:bg-gray-100 text-gray-300 hover:text-red-400 transition-colors flex-shrink-0 opacity-0 group-hover:opacity-100"
+                                >
+                                    <X className="w-3.5 h-3.5" />
+                                </button>
                             </motion.button>
                         ))}
                     </div>

@@ -5,6 +5,7 @@ import Report from '../models/Report';
 import User from '../models/User';
 import { buildPairQuery, createFriendshipPayload, findFriendshipBetween } from '../services/friendship.service';
 import { createNotification } from '../services/notification.service';
+import { trackEvent } from '../services/analytics.service';
 
 const router = express.Router();
 
@@ -84,6 +85,8 @@ router.post('/request', protect, async (req: AuthRequest, res) => {
             data: { partnerId: userId, friendshipId: friendship._id.toString() }
         });
 
+        await trackEvent('friend_request_sent', userId, { targetUserId });
+
         res.status(201).json(createFriendshipPayload(friendship, userId));
     } catch (error) {
         console.error('Failed to create connection request', error);
@@ -126,6 +129,8 @@ router.put('/accept/:id', protect, async (req: AuthRequest, res) => {
             })
         ]);
 
+        await trackEvent('friend_request_accepted', userId, { partnerId });
+
         res.json(createFriendshipPayload(friendship, userId));
     } catch (error) {
         console.error('Failed to accept connection', error);
@@ -149,6 +154,8 @@ router.put('/block/:id', protect, async (req: AuthRequest, res) => {
         friendship.status = 'blocked';
         friendship.initiatorId = userId;
         await friendship.save();
+
+        await trackEvent('user_blocked', userId, { targetUserId });
 
         res.json(createFriendshipPayload(friendship, userId));
     } catch (error) {
@@ -194,9 +201,39 @@ router.post('/report', protect, async (req: AuthRequest, res) => {
             await targetUser.save();
         }
 
+        await trackEvent('user_reported', userId, { targetUserId, reason });
+
         res.json({ message: 'User reported and blocked successfully', report });
     } catch (error) {
         console.error('Report error', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+router.put('/unblock/:id', protect, async (req: AuthRequest, res) => {
+    try {
+        const userId = req.user!.id;
+        const targetUserId = req.params.id;
+
+        const friendship = await findFriendshipBetween(userId, targetUserId);
+        if (!friendship || friendship.status !== 'blocked') {
+            return res.status(404).json({ message: 'No active block found' });
+        }
+
+        // Only the person who initiated the block can unblock
+        if (friendship.initiatorId !== userId) {
+            return res.status(403).json({ message: 'Only the blocking user can unblock' });
+        }
+
+        // Set to rejected so neither sees the other, but they can re-request
+        friendship.status = 'rejected';
+        await friendship.save();
+
+        await trackEvent('user_unblocked', userId, { targetUserId });
+
+        res.json({ message: 'User unblocked successfully' });
+    } catch (error) {
+        console.error('Failed to unblock user', error);
         res.status(500).json({ message: 'Server error' });
     }
 });

@@ -18,9 +18,13 @@ import aiRoutes from './routes/ai.routes';
 import connectionRoutes from './routes/connection.routes';
 import notificationRoutes from './routes/notification.routes';
 import uploadRoutes from './routes/upload.routes';
+import premiumRoutes from './routes/premium.routes';
+import adminRoutes from './routes/admin.routes';
 import connectDB from './config/db';
 import { setupMatchingHandlers } from './socket/matching.handler';
+import { connectedUsers } from './socket/matching.handler';
 import { setupChatHandlers } from './socket/chat.handler';
+import { setNotificationIO, setConnectedUsersMap } from './services/notification.service';
 import { errorHandler } from './middleware/error.middleware';
 import { mongoSanitizeMiddleware } from './middleware/sanitize.middleware';
 import { stream } from './utils/logger';
@@ -63,8 +67,9 @@ const apiLimiter = rateLimit({
     message: { error: 'Too many requests. Please try again later.' }
 });
 
-// Apply rate limiting to authentication routes
-app.use('/auth', apiLimiter);
+// Apply rate limiting to authentication routes (not refresh/logout)
+app.use('/auth/send-otp', apiLimiter);
+app.use('/auth/verify-otp', apiLimiter);
 
 app.use('/auth', authRoutes);
 app.use('/user', userRoutes);
@@ -74,6 +79,8 @@ app.use('/ai', aiRoutes);
 app.use('/connections', connectionRoutes);
 app.use('/notifications', notificationRoutes);
 app.use('/upload', uploadRoutes);
+app.use('/premium', premiumRoutes);
+app.use('/admin', adminRoutes);
 
 // Serve uploaded files
 import path from 'path';
@@ -91,6 +98,10 @@ app.use(errorHandler);
 
 setupMatchingHandlers(io);
 setupChatHandlers(io);
+
+// Enable live notification pushes via sockets
+setNotificationIO(io);
+setConnectedUsersMap(connectedUsers);
 
 // Keep the default connection log just in case
 io.on('connection', (socket) => {

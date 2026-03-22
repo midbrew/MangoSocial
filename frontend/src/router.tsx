@@ -20,6 +20,14 @@ import NotFoundPage from './pages/NotFoundPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import AppLayout from './components/AppLayout';
 
+// Admin pages
+import AdminLayout from './pages/admin/AdminLayout';
+import AdminOverview from './pages/admin/AdminOverview';
+import AdminUsers from './pages/admin/AdminUsers';
+import AdminReports from './pages/admin/AdminReports';
+import AdminAnalytics from './pages/admin/AdminAnalytics';
+import AdminSettings from './pages/admin/AdminSettings';
+
 export const router = createBrowserRouter([
     {
         element: <AppLayout />,
@@ -149,5 +157,20 @@ export const router = createBrowserRouter([
                 element: <NotFoundPage />
             }
         ]
-    }
+    },
+    {
+        path: '/admin',
+        element: (
+            <ProtectedRoute requireOnboarding>
+                <AdminLayout />
+            </ProtectedRoute>
+        ),
+        children: [
+            { index: true, element: <AdminOverview /> },
+            { path: 'users', element: <AdminUsers /> },
+            { path: 'reports', element: <AdminReports /> },
+            { path: 'analytics', element: <AdminAnalytics /> },
+            { path: 'settings', element: <AdminSettings /> },
+        ],
+    },
 ]);

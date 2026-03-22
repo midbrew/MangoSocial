@@ -24,9 +24,15 @@ interface User {
         genderPreference: string[];
         useStarSignMatching: boolean;
     };
+    premiumStatus: {
+        isPremium: boolean;
+        expiresAt?: string | null;
+    };
     isOnboarded: boolean;
     canMatchHumans: boolean;
     aiSessionsCompleted: number;
+    reputationScore?: number;
+    isAdmin?: boolean;
 }
 
 interface AuthContextType {
@@ -42,9 +48,10 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Axios instance with auth header
+// Axios instance with auth header and cookie support
 export const api = axios.create({
     baseURL: API_URL,
+    withCredentials: true, // Send httpOnly cookies for refresh token
 });
 
 // Add token to requests
@@ -55,6 +62,83 @@ api.interceptors.request.use((config) => {
     }
     return config;
 });
+
+// Auto-refresh on 401
+let isRefreshing = false;
+let hasLoggedOut = false;
+let failedQueue: { resolve: (token: string) => void; reject: (err: any) => void }[] = [];
+
+const processQueue = (error: any, token: string | null = null) => {
+    failedQueue.forEach((prom) => {
+        if (token) prom.resolve(token);
+        else prom.reject(error);
+    });
+    failedQueue = [];
+};
+
+const forceLogout = () => {
+    if (hasLoggedOut) return;
+    hasLoggedOut = true;
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    window.location.href = '/login';
+};
+
+api.interceptors.response.use(
+    (response) => response,
+    async (error) => {
+        const originalRequest = error.config;
+
+        // Never try to refresh if we've already decided to log out
+        if (hasLoggedOut) return Promise.reject(error);
+
+        // Only attempt refresh for 401 errors from non-auth endpoints
+        if (
+            error.response?.status !== 401 ||
+            originalRequest._retry ||
+            originalRequest.url?.includes('/auth/')
+        ) {
+            return Promise.reject(error);
+        }
+
+        // No point refreshing if there's no token (user never logged in)
+        const currentToken = localStorage.getItem('token');
+        if (!currentToken) {
+            return Promise.reject(error);
+        }
+
+        if (isRefreshing) {
+            return new Promise((resolve, reject) => {
+                failedQueue.push({
+                    resolve: (token: string) => {
+                        originalRequest.headers.Authorization = `Bearer ${token}`;
+                        resolve(api(originalRequest));
+                    },
+                    reject,
+                });
+            });
+        }
+
+        originalRequest._retry = true;
+        isRefreshing = true;
+
+        try {
+            const { data } = await axios.post(`${API_URL}/auth/refresh`, {}, { withCredentials: true });
+            const newToken = data.token;
+            localStorage.setItem('token', newToken);
+            api.defaults.headers.common.Authorization = `Bearer ${newToken}`;
+            processQueue(null, newToken);
+            originalRequest.headers.Authorization = `Bearer ${newToken}`;
+            return api(originalRequest);
+        } catch (refreshError) {
+            processQueue(refreshError, null);
+            forceLogout();
+            return Promise.reject(refreshError);
+        } finally {
+            isRefreshing = false;
+        }
+    }
+);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
@@ -73,11 +157,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     const response = await api.get('/user/me');
                     setUser(response.data.user);
                 } catch (error) {
-                    // Token invalid, clear storage
+                    // Token invalid — try refresh (interceptor handles it)
                     console.error('Failed to fetch user:', error);
                     localStorage.removeItem('token');
                     localStorage.removeItem('user');
                     setToken(null);
+                }
+            } else {
+                // No stored token, but httpOnly refresh cookie might still be valid
+                try {
+                    const { data } = await axios.post(`${API_URL}/auth/refresh`, {}, { withCredentials: true });
+                    if (data.token) {
+                        localStorage.setItem('token', data.token);
+                        setToken(data.token);
+                        const response = await api.get('/user/me');
+                        setUser(response.data.user);
+                    }
+                } catch {
+                    // No valid refresh token either — stay logged out
                 }
             }
             
@@ -94,7 +191,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(userData);
     };
 
-    const logout = () => {
+    const logout = async () => {
+        try {
+            await api.post('/auth/logout');
+        } catch {
+            // Best-effort cookie clear
+        }
         localStorage.removeItem('token');
         localStorage.removeItem('user');
         setToken(null);

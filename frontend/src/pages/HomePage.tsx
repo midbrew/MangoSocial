@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 export default function HomePage() {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
+    const interests = user?.interests || [];
 
     return (
         <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white">
@@ -97,23 +98,47 @@ export default function HomePage() {
                         )}
                     </div>
 
-                    {/* Stats */}
-                    <div className={`mt-8 grid gap-4 ${user?.canMatchHumans ? 'grid-cols-1 max-w-[200px] mx-auto' : 'grid-cols-2'}`}>
-                        {!user?.canMatchHumans && (
+                    {/* Interests */}
+                    {interests.length > 0 && (
+                        <div className="mt-6 text-left">
+                            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 text-center">
+                                Your Interests
+                            </p>
+                            <div className="flex flex-wrap gap-2 justify-center">
+                                {interests.map((interest) => (
+                                    <span
+                                        key={`${interest.category || 'interest'}-${interest.value}`}
+                                        className="px-3 py-1.5 rounded-full bg-white border border-orange-100 text-sm font-medium text-gray-700 shadow-sm"
+                                    >
+                                        {interest.value}
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* AI Progress */}
+                    {!user?.canMatchHumans && (
+                        <div className="mt-8 max-w-[200px] mx-auto">
                             <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
                                 <p className="text-2xl font-bold text-orange-500">
                                     {user?.aiSessionsCompleted || 0}/3
                                 </p>
                                 <p className="text-xs text-gray-500">AI Sessions</p>
                             </div>
-                        )}
-                        <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-                            <p className="text-2xl font-bold text-orange-500">
-                                {user?.interests?.length || 0}
-                            </p>
-                            <p className="text-xs text-gray-500">Interests</p>
                         </div>
-                    </div>
+                    )}
+
+                    {interests.length === 0 && (
+                        <div className="mt-6">
+                            <button
+                                onClick={() => navigate('/profile-setup')}
+                                className="text-sm text-orange-500 font-medium hover:text-orange-600"
+                            >
+                                Add your interests to improve matching
+                            </button>
+                        </div>
+                    )}
                 </motion.div>
             </main>
         </div>

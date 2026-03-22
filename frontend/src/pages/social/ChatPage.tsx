@@ -1,7 +1,8 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Send, ArrowLeft, Bot } from 'lucide-react';
+import { Send, ArrowLeft, Bot, User } from 'lucide-react';
 import { api, useAuth } from '../../context/AuthContext';
+import { socketService } from '../../services/socket.service';
 
 export default function ChatPage() {
   const { id } = useParams(); // partnerId
@@ -10,23 +11,73 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const [partnerDetails, setPartnerDetails] = useState<any>(null);
   const [isBotThinking, setIsBotThinking] = useState(false);
+  const [isPartnerTyping, setIsPartnerTyping] = useState(false);
   const [error, setError] = useState('');
   const { user } = useAuth();
 
   const myUserId = user?._id || user?.id || null;
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isBot = id?.startsWith('bot_') ?? false;
 
+  // -- Socket setup ---------------------------------------------------------
   useEffect(() => {
-    // 1. Fetch partner metadata
-    api.get('/friends').then(res => {
+    if (!myUserId || !id) return;
+
+    const socket = socketService.connect(myUserId);
+
+    // Join the chat room
+    socket.emit('join-chat', { userId: myUserId, partnerId: id });
+
+    const onReceiveMessage = (msg: any) => {
+      // Only add messages relevant to this conversation
+      const isRelevant =
+        (msg.senderId === myUserId && msg.receiverId === id) ||
+        (msg.senderId === id && msg.receiverId === myUserId);
+      if (!isRelevant) return;
+
+      setMessages((prev) => {
+        // Deduplicate by _id
+        if (prev.some((m) => m._id === msg._id)) return prev;
+        return [...prev, msg];
+      });
+
+      // Mark received messages as read
+      if (msg.senderId === id) {
+        socket.emit('mark-read', { userId: myUserId, partnerId: id });
+      }
+
+      setIsBotThinking(false);
+    };
+
+    const onPartnerTyping = (data: { userId: string; isTyping: boolean }) => {
+      if (data.userId === id) {
+        setIsPartnerTyping(data.isTyping);
+      }
+    };
+
+    socket.on('receive-message', onReceiveMessage);
+    socket.on('partner-typing', onPartnerTyping);
+
+    return () => {
+      socket.off('receive-message', onReceiveMessage);
+      socket.off('partner-typing', onPartnerTyping);
+      socket.emit('leave-chat', { userId: myUserId, partnerId: id });
+    };
+  }, [myUserId, id]);
+
+  // -- Fetch partner details & initial messages -----------------------------
+  useEffect(() => {
+    if (!id) return;
+
+    // Fetch partner metadata
+    api.get('/friends').then((res) => {
       const friend = res.data.find((f: any) => f.id === id);
       if (friend) setPartnerDetails(friend);
     }).catch(console.error);
 
-    // 2. Fetch messages initially & poll every 3 seconds
+    // Fetch message history (REST for initial load)
     fetchMessages();
-    const interval = setInterval(fetchMessages, 3000);
-    return () => clearInterval(interval);
   }, [id]);
 
   const fetchMessages = async () => {
@@ -40,35 +91,67 @@ export default function ChatPage() {
     }
   };
 
+  // -- Auto-scroll ----------------------------------------------------------
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isBotThinking]);
+  }, [messages, isBotThinking, isPartnerTyping]);
 
+  // -- Typing indicator emission --------------------------------------------
+  const emitTyping = useCallback(
+    (isTyping: boolean) => {
+      const socket = socketService.getSocket();
+      if (!socket || !myUserId || !id || isBot) return;
+      socket.emit('typing', { userId: myUserId, partnerId: id, isTyping });
+    },
+    [myUserId, id, isBot]
+  );
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setInput(e.target.value);
+
+    // Send typing: true, then debounce to send typing: false after 1.5s of inactivity
+    emitTyping(true);
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => emitTyping(false), 1500);
+  };
+
+  // -- Send message ---------------------------------------------------------
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || !id || !myUserId) return;
 
-    const optimisticMessage = {
-      _id: Date.now().toString(),
-      senderId: myUserId,
-      receiverId: id,
-      content: input,
-      createdAt: new Date().toISOString()
-    };
-
-    setMessages(prev => [...prev, optimisticMessage]);
+    const content = input.trim();
     setInput('');
-    setIsBotThinking(true);
+    emitTyping(false);
 
-    try {
-      await api.post('/messages', { receiverId: id, content: optimisticMessage.content });
-      await fetchMessages(); // Refetch perfectly sync'd DB content
-    } catch (e) {
-      console.error(e);
-      setError((e as any).response?.data?.error || 'Unable to send message right now.');
-      setMessages(prev => prev.filter((message) => message._id !== optimisticMessage._id));
-    } finally {
-      setIsBotThinking(false);
+    if (isBot) {
+      // Bot conversations go through REST (AI response pipeline)
+      const optimisticMessage = {
+        _id: Date.now().toString(),
+        senderId: myUserId,
+        receiverId: id,
+        content,
+        createdAt: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, optimisticMessage]);
+      setIsBotThinking(true);
+
+      try {
+        await api.post('/messages', { receiverId: id, content });
+        await fetchMessages();
+      } catch (e) {
+        console.error(e);
+        setError((e as any).response?.data?.error || 'Unable to send message right now.');
+        setMessages((prev) => prev.filter((m) => m._id !== optimisticMessage._id));
+      } finally {
+        setIsBotThinking(false);
+      }
+    } else {
+      // Human conversations go through the socket for real-time delivery
+      const socket = socketService.getSocket();
+      if (socket) {
+        socket.emit('send-message', { senderId: myUserId, receiverId: id, content });
+      }
     }
   };
 
@@ -79,14 +162,17 @@ export default function ChatPage() {
         <button onClick={() => navigate('/friends')} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
           <ArrowLeft className="w-5 h-5 text-gray-600" />
         </button>
-        <div className="flex items-center gap-3 flex-1">
+        <div
+          className="flex items-center gap-3 flex-1 cursor-pointer"
+          onClick={() => !isBot && id && navigate(`/profile/${id}`)}
+        >
           <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center overflow-hidden flex-shrink-0 text-orange-500">
             {partnerDetails?.profileImageUrl || partnerDetails?.avatarUrl ? (
               <img src={partnerDetails.profileImageUrl || partnerDetails.avatarUrl} className="w-full h-full object-cover" alt="" />
             ) : partnerDetails?.isBot ? (
               <Bot className="w-5 h-5" />
             ) : (
-              <span className="text-lg">🥭</span>
+              <User className="w-5 h-5" />
             )}
           </div>
           <div>
@@ -98,7 +184,7 @@ export default function ChatPage() {
                 </span>
               )}
             </div>
-            {isBotThinking && (
+            {(isPartnerTyping || isBotThinking) && (
               <p className="text-xs text-orange-500 animate-pulse">typing...</p>
             )}
           </div>
@@ -142,7 +228,7 @@ export default function ChatPage() {
         )}
 
         {/* Typing indicator */}
-        {isBotThinking && (
+        {(isPartnerTyping || isBotThinking) && (
           <div className="flex justify-start">
             <div className="bg-white border border-gray-100 rounded-2xl rounded-bl-none px-4 py-3 shadow-sm">
               <div className="flex gap-1">
@@ -163,7 +249,7 @@ export default function ChatPage() {
           <input 
             type="text" 
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={handleInputChange}
             placeholder="Message..."
             disabled={isBotThinking || !!error}
             className="flex-1 bg-gray-50 border border-gray-200 rounded-full px-5 py-3.5 text-gray-900 text-sm focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-400/20 transition-all placeholder:text-gray-400 disabled:opacity-50"

@@ -6,6 +6,7 @@ import fs from 'fs';
 import Friendship from '../models/Friendship';
 import { buildPairQuery, getBlockedPartnerIds } from '../services/friendship.service';
 import { createNotification } from '../services/notification.service';
+import { trackEvent } from '../services/analytics.service';
 
 function debugLog(msg: string) {
     fs.appendFileSync('/Users/micah/Desktop/MY_APPS/MangoSocial/backend/queue_debug.log', new Date().toISOString() + ' ' + msg + '\n');
@@ -17,8 +18,8 @@ interface QueueUser {
 }
 
 let waitingQueue: QueueUser[] = [];
-// Map of userId -> their current socketId
-const connectedUsers: Map<string, string> = new Map();
+// Map of userId -> their current socketId (exported for notification service)
+export const connectedUsers: Map<string, string> = new Map();
 // Map of userId -> match info
 const activeMatches: Map<string, { channelName: string; partnerId: string }> = new Map();
 // Map of channelName -> { user1Extended: boolean, user2Extended: boolean }
@@ -54,6 +55,7 @@ export const setupMatchingHandlers = (io: Server) => {
               return;
           }
           debugLog(`User doc found. canMatchHumans is true.`);
+          await trackEvent('queue_joined', userId);
           
           userDoc.checkDailyReset();
           if (userDoc.dailyConnections.used >= userDoc.getDailyLimit()) {
@@ -101,6 +103,10 @@ export const setupMatchingHandlers = (io: Server) => {
             // Notify both
             socket.emit('match-found', { roomId: channelName, partnerId: partnerDoc.id, uid: userId });
             io.to(partnerQueueUser.socketId).emit('match-found', { roomId: channelName, partnerId: userId, uid: partnerDoc.id });
+            await Promise.all([
+              trackEvent('human_match_found', userId, { partnerId: partnerDoc.id }),
+              trackEvent('human_match_found', partnerDoc.id, { partnerId: userId }),
+            ]);
             
           } else {
             waitingQueue.push({ socketId: socket.id, user: userDoc });
@@ -135,6 +141,7 @@ export const setupMatchingHandlers = (io: Server) => {
                     isBot: true,
                     botName
                 });
+                void trackEvent('bot_match_found', userId, { botId });
             }, 5000);
             
             // Store timeout so it can be cleared if user leaves queue
@@ -201,6 +208,10 @@ export const setupMatchingHandlers = (io: Server) => {
               data: { partnerId: data.userId }
             })
           ]);
+          await Promise.all([
+            trackEvent('mango_match_success', data.userId, { partnerId: match.partnerId }),
+            trackEvent('mango_match_success', match.partnerId, { partnerId: data.userId }),
+          ]);
 
           socket.emit('mango-match-success', { partnerId: match.partnerId });
           if (partnerSocketId) {
@@ -248,6 +259,7 @@ export const setupMatchingHandlers = (io: Server) => {
             isBot: true,
             botName
         });
+        void trackEvent('bot_match_found', userId, { botId, forced: true });
     });
 
     socket.on('leave-queue', (data: { userId: string }) => {

@@ -2,7 +2,8 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { Bell, Home, Settings, Users } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
-import { api } from '../context/AuthContext';
+import { api, useAuth } from '../context/AuthContext';
+import { socketService } from '../services/socket.service';
 
 interface NavItem {
     label: string;
@@ -16,8 +17,11 @@ export default function BottomNav() {
     const location = useLocation();
     const [mangoBadgeCount, setMangoBadgeCount] = useState(0);
     const [notificationBadgeCount, setNotificationBadgeCount] = useState(0);
+    const { user } = useAuth();
+    const userId = user?._id || user?.id;
 
     useEffect(() => {
+        if (!userId) return;
         const fetchBadgeCount = async () => {
             try {
                 const [friendsRes, requestsRes, notificationsRes] = await Promise.all([
@@ -35,12 +39,29 @@ export default function BottomNav() {
             }
         };
         fetchBadgeCount();
-    }, [location.pathname]);
+    }, [location.pathname, userId]);
+
+    // Live notification updates via socket
+    useEffect(() => {
+        if (!userId) return;
+
+        const socket = socketService.connect(userId);
+
+        const onNewNotification = () => {
+            setNotificationBadgeCount((prev) => prev + 1);
+        };
+
+        socket.on('new-notification', onNewNotification);
+
+        return () => {
+            socket.off('new-notification', onNewNotification);
+        };
+    }, [userId]);
 
     const navItems: NavItem[] = [
         { label: 'Home', icon: Home, path: '/' },
         { label: 'Mangoes', icon: Users, path: '/friends', badge: mangoBadgeCount },
-        { label: 'Alerts', icon: Bell, path: '/notifications', badge: notificationBadgeCount },
+        { label: 'Notifications', icon: Bell, path: '/notifications', badge: notificationBadgeCount },
         { label: 'Settings', icon: Settings, path: '/settings' },
     ];
 
@@ -67,7 +88,7 @@ export default function BottomNav() {
                             {isActive && (
                                 <motion.div
                                     layoutId="nav-indicator"
-                                    className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-orange-500 rounded-full"
+                                    className="absolute top-0 w-8 h-0.5 bg-orange-500 rounded-full"
                                     transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                                 />
                             )}

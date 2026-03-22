@@ -5,6 +5,7 @@ import Message from '../models/Message';
 import User from '../models/User';
 import { BOT_IDS, BOT_PROFILES, buildPairQuery, createFriendshipPayload, findFriendshipBetween } from '../services/friendship.service';
 import { createNotification } from '../services/notification.service';
+import { trackEvent } from '../services/analytics.service';
 
 const router = express.Router();
 
@@ -144,6 +145,7 @@ router.post('/connect', protect, async (req: AuthRequest, res: Response): Promis
                 relatedId: targetId,
                 data: { partnerId: targetId }
             });
+            await trackEvent('bot_connected', userId, { botId: targetId });
         } else {
             await createNotification({
                 userId: targetId,
@@ -153,6 +155,7 @@ router.post('/connect', protect, async (req: AuthRequest, res: Response): Promis
                 relatedId: userId,
                 data: { partnerId: userId, friendshipId: friendship._id.toString() }
             });
+            await trackEvent('friend_request_sent', userId, { targetUserId: targetId, source: 'friends_connect' });
         }
 
         res.status(201).json({
